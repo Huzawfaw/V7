@@ -25,35 +25,49 @@ export default function Page() {
     return json.token as string
   }
 
-  useEffect(() => {
-    (async () => {
-      if (isMock) {
-        setStatus('Mock mode: ready')
-        setReady(true)
-        return
+ useEffect(() => {
+  (async () => {
+    if (isMock) {
+      setStatus('Mock mode: ready');
+      setReady(true);
+      return;
+    }
+    try {
+      console.log('Importing Twilio Voice SDK...');
+      const mod = await import('@twilio/voice-sdk');
+      Voice = mod;
+      setStatus('Fetching token...');
+      const token = await getToken(identity);
+      console.log('Initializing Twilio Device...');
+
+      let dev;
+      if (typeof Voice.Device?.create === 'function') {
+        // Older API style
+        dev = await Voice.Device.create(token);
+      } else if (typeof Voice.Device === 'function') {
+        // Newer API style
+        dev = new Voice.Device(token);
+      } else {
+        throw new Error('Twilio Device constructor not found in SDK');
       }
-      try {
-        const mod = await import('@twilio/voice-sdk')
-        Voice = mod
-        setStatus('Fetching token...')
-        const token = await getToken(identity)
 
-        // ✅ FIX: use `new Device` not `Device.create`
-        const dev = new Voice.Device(token)
+      // Event listeners
+      dev.on('registered', () => { console.log('Device registered'); setStatus('Registered'); });
+      dev.on('error', (e: any) => { console.error('Device error:', e); setStatus('Error: ' + e.message); });
+      dev.on('incoming', (call: any) => { console.log('Incoming call:', call); call.reject(); });
+      dev.on('unregistered', () => { console.log('Device unregistered'); setStatus('Unregistered'); });
+      dev.on('registrationFailed', (e: any) => { console.error('Registration failed:', e); });
 
-        dev.on('registered', () => setStatus('Registered'))
-        dev.on('error', (e: any) => setStatus('Error: ' + e.message))
-        dev.on('incoming', (call: any) => call.reject())
-        dev.on('unregistered', () => setStatus('Unregistered'))
-        dev.on('registrationFailed', (e: any) => setStatus('Registration failed: ' + e.message))
+      setDevice(dev);
+      setReady(true);
+      console.log('Device ready');
+    } catch (err: any) {
+      console.error('Failed to initialize Twilio device:', err);
+      setStatus('Error: ' + err.message);
+    }
+  })();
+}, []);
 
-        setDevice(dev)
-        setReady(true)
-      } catch (err: any) {
-        setStatus('Error: ' + err.message)
-      }
-    })()
-  }, [])
 
   async function handleCall() {
     if (isMock) {
