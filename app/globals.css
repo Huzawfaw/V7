@@ -1,4 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-html,body{height:100%}
+
+/* Smooth font rendering */
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Default light mode */
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* Dark mode */
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
