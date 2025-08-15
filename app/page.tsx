@@ -1,7 +1,7 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 
+declare global { interface Window {} }
 const isMock = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_MOCK === '1'
 let Voice: any = null
 
@@ -16,7 +16,6 @@ export default function Page() {
   const [logs, setLogs] = useState<any>({ A: [], B: [] })
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [recordings, setRecordings] = useState<any[]>([])
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
   async function getToken(id: string) {
     const res = await fetch(`/api/token?identity=${encodeURIComponent(id)}`)
@@ -24,29 +23,8 @@ export default function Page() {
     return json.token as string
   }
 
-  // Theme setup
   useEffect(() => {
-    const stored = localStorage.getItem('theme')
-    if (stored) {
-      setTheme(stored as 'light' | 'dark')
-      document.documentElement.classList.toggle('dark', stored === 'dark')
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      const initialTheme = prefersDark ? 'dark' : 'light'
-      setTheme(initialTheme)
-      document.documentElement.classList.toggle('dark', initialTheme === 'dark')
-    }
-  }, [])
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(newTheme)
-    document.documentElement.classList.toggle('dark', newTheme === 'dark')
-    localStorage.setItem('theme', newTheme)
-  }
-
-  useEffect(() => {
-    ;(async () => {
+    (async () => {
       if (isMock) { setStatus('Mock mode: ready'); setReady(true); return }
       const mod = await import('@twilio/voice-sdk'); Voice = mod
       const token = await getToken(identity)
@@ -80,140 +58,128 @@ export default function Page() {
 
   async function loadLogs() { setLoadingLogs(true); const r = await fetch('/api/calls'); setLogs(await r.json()); setLoadingLogs(false) }
   async function loadRecordings(callSid?: string) {
-    const url = callSid ? `/api/recordings?callSid=${callSid}` : '/api/recordings'
-    const r = await fetch(url)
+    const r = await fetch('/api/recordings' + (callSid ? `?callSid=${callSid}` : ''))
     setRecordings(await r.json())
   }
 
-  const statusColor =
-    status.startsWith('Error') ? 'bg-red-500' :
-    status.includes('call') || status === 'Registered' ? 'bg-green-500' :
-    status.includes('Calling') ? 'bg-yellow-500' : 'bg-gray-500'
+  function toggleDarkMode() {
+    document.documentElement.classList.toggle('dark')
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-200 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        
-        {/* Header with theme toggle */}
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Two-Number Web Dialer</h1>
-          <button
-            onClick={toggleTheme}
-            className="px-4 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
-          >
-            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
-          </button>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Two-Number Web Dialer</h1>
+        <button
+          onClick={toggleDarkMode}
+          className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+        >
+          🌙 Toggle Dark Mode
+        </button>
+      </div>
+
+      <p className="mb-4">Twilio WebRTC with separate histories & recordings</p>
+      <p className="mb-4 font-medium">Status: {status}</p>
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        <input
+          className="px-2 py-1 border rounded bg-white dark:bg-gray-800"
+          value={identity}
+          onChange={(e) => setIdentity(e.target.value)}
+        />
+        <select
+          className="px-2 py-1 border rounded bg-white dark:bg-gray-800"
+          value={company}
+          onChange={(e) => setCompany(e.target.value as 'A' | 'B')}
+        >
+          <option value="A">Company A</option>
+          <option value="B">Company B</option>
+        </select>
+        <input
+          className="px-2 py-1 border rounded bg-white dark:bg-gray-800"
+          placeholder="Dial Number e.g. +1856230"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+        />
+        <button
+          onClick={handleCall}
+          className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+        >
+          Call
+        </button>
+        <button
+          onClick={hangup}
+          className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+        >
+          Hang Up
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={loadLogs}
+          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          {loadingLogs ? 'Loading...' : 'Refresh Call Logs'}
+        </button>
+        <button
+          onClick={() => loadRecordings()}
+          className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600"
+        >
+          Load Recordings
+        </button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div>
+          <h2 className="text-xl font-semibold mb-2">Company A — Call History</h2>
+          {logs.A.length === 0 ? (
+            <p className="text-gray-500">No calls yet</p>
+          ) : (
+            logs.A.map((log: any, i: number) => (
+              <div key={i} className="mb-2 p-3 border rounded bg-white dark:bg-gray-800">
+                <p>{log.number} ({log.direction}) • {log.duration}s • {log.status}</p>
+                <button
+                  onClick={() => loadRecordings(log.sid)}
+                  className="mt-1 text-blue-500 hover:underline"
+                >
+                  Recordings
+                </button>
+              </div>
+            ))
+          )}
         </div>
-        <p className="text-gray-500 dark:text-gray-400">
-          Twilio WebRTC with separate histories & recordings
-        </p>
-        
-        {/* Status Banner */}
-        <div className={`text-white px-4 py-2 rounded-md text-center font-medium ${statusColor}`}>
-          Status: {status}
+
+        <div>
+          <h2 className="text-xl font-semibold mb-2">Company B — Call History</h2>
+          {logs.B.length === 0 ? (
+            <p className="text-gray-500">No calls yet</p>
+          ) : (
+            logs.B.map((log: any, i: number) => (
+              <div key={i} className="mb-2 p-3 border rounded bg-white dark:bg-gray-800">
+                <p>{log.number} ({log.direction}) • {log.duration}s • {log.status}</p>
+                <button
+                  onClick={() => loadRecordings(log.sid)}
+                  className="mt-1 text-blue-500 hover:underline"
+                >
+                  Recordings
+                </button>
+              </div>
+            ))
+          )}
         </div>
+      </div>
 
-        {/* Controls */}
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md space-y-4">
-          <input
-            value={identity}
-            onChange={e => setIdentity(e.target.value)}
-            placeholder="Agent Identity"
-            className="w-full px-3 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-700"
-          />
-
-          <select
-            value={company}
-            onChange={e => setCompany(e.target.value as 'A' | 'B')}
-            className="w-full px-3 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-700"
-          >
-            <option value="A">Company A</option>
-            <option value="B">Company B</option>
-          </select>
-
-          <input
-            value={target}
-            onChange={e => setTarget(e.target.value)}
-            placeholder="Dial Number e.g. +18562307373"
-            className="w-full px-3 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-700"
-          />
-
-          <div className="flex gap-4">
-            <button
-              onClick={handleCall}
-              disabled={!isReady}
-              className="flex-1 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              Call
-            </button>
-            <button
-              onClick={hangup}
-              className="flex-1 py-2 rounded-md bg-red-600 text-white hover:bg-red-700"
-            >
-              Hang Up
-            </button>
-          </div>
-
-          <div className="flex gap-4">
-            <button
-              onClick={loadLogs}
-              className="flex-1 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-            >
-              Refresh Call Logs
-            </button>
-            <button
-              onClick={() => loadRecordings()}
-              className="flex-1 py-2 rounded-md bg-purple-600 text-white hover:bg-purple-700"
-            >
-              Load Recordings
-            </button>
-          </div>
-        </div>
-
-        {/* Call History */}
-        <div className="space-y-4">
-          {['A', 'B'].map(c => (
-            <div key={c} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
-              <h2 className="text-lg font-semibold mb-2">Company {c} — Call History</h2>
-              {logs[c].length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400">No calls yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {logs[c].map((log: any, i: number) => (
-                    <li key={i} className="border-b dark:border-gray-700 pb-2">
-                      <div className="flex justify-between">
-                        <span>{log.from} → {log.to}</span>
-                        <span className="text-sm text-gray-500">{log.duration}s</span>
-                      </div>
-                      <button
-                        onClick={() => loadRecordings(log.sid)}
-                        className="text-blue-500 hover:underline text-sm"
-                      >
-                        Recordings
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+      {recordings.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold mb-2">Recordings</h2>
+          {recordings.map((rec, i) => (
+            <div key={i} className="mb-2 p-3 border rounded bg-white dark:bg-gray-800">
+              <audio controls src={rec.url} className="w-full" />
             </div>
           ))}
         </div>
-
-        {/* Recordings */}
-        {recordings.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
-            <h2 className="text-lg font-semibold mb-2">Recordings</h2>
-            <ul className="space-y-2">
-              {recordings.map((rec, i) => (
-                <li key={i}>
-                  <audio controls src={rec.url} className="w-full" />
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-      </div>
+      )}
     </div>
   )
 }
