@@ -1,8 +1,7 @@
-// 'use client'
 'use client'
+
 import { useEffect, useState } from 'react'
 
-declare global { interface Window { } }
 const isMock = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_MOCK === '1'
 let Voice: any = null
 
@@ -17,6 +16,7 @@ export default function Page() {
   const [logs, setLogs] = useState<any>({ A: [], B: [] })
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [recordings, setRecordings] = useState<any[]>([])
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
   async function getToken(id: string) {
     const res = await fetch(`/api/token?identity=${encodeURIComponent(id)}`)
@@ -24,8 +24,29 @@ export default function Page() {
     return json.token as string
   }
 
+  // Theme setup
   useEffect(() => {
-    (async () => {
+    const stored = localStorage.getItem('theme')
+    if (stored) {
+      setTheme(stored as 'light' | 'dark')
+      document.documentElement.classList.toggle('dark', stored === 'dark')
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      const initialTheme = prefersDark ? 'dark' : 'light'
+      setTheme(initialTheme)
+      document.documentElement.classList.toggle('dark', initialTheme === 'dark')
+    }
+  }, [])
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light'
+    setTheme(newTheme)
+    document.documentElement.classList.toggle('dark', newTheme === 'dark')
+    localStorage.setItem('theme', newTheme)
+  }
+
+  useEffect(() => {
+    ;(async () => {
       if (isMock) { setStatus('Mock mode: ready'); setReady(true); return }
       const mod = await import('@twilio/voice-sdk'); Voice = mod
       const token = await getToken(identity)
@@ -60,99 +81,139 @@ export default function Page() {
   async function loadLogs() { setLoadingLogs(true); const r = await fetch('/api/calls'); setLogs(await r.json()); setLoadingLogs(false) }
   async function loadRecordings(callSid?: string) {
     const url = callSid ? `/api/recordings?callSid=${callSid}` : '/api/recordings'
-    const r = await fetch(url); const j = await r.json(); setRecordings(j.recordings)
+    const r = await fetch(url)
+    setRecordings(await r.json())
   }
-  useEffect(() => { loadLogs() }, [])
+
+  const statusColor =
+    status.startsWith('Error') ? 'bg-red-500' :
+    status.includes('call') || status === 'Registered' ? 'bg-green-500' :
+    status.includes('Calling') ? 'bg-yellow-500' : 'bg-gray-500'
 
   return (
-    <main className="mx-auto max-w-4xl p-6">
-      <h1 className="text-3xl font-bold mb-2">Two-Number Web Dialer</h1>
-      <p className="text-sm text-zinc-600 mb-6">Twilio WebRTC dialer with separate histories & recordings per company number.</p>
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-200 p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        
+        {/* Header with theme toggle */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Two-Number Web Dialer</h1>
+          <button
+            onClick={toggleTheme}
+            className="px-4 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+          >
+            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+          </button>
+        </div>
+        <p className="text-gray-500 dark:text-gray-400">
+          Twilio WebRTC with separate histories & recordings
+        </p>
+        
+        {/* Status Banner */}
+        <div className={`text-white px-4 py-2 rounded-md text-center font-medium ${statusColor}`}>
+          Status: {status}
+        </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="md:col-span-2 p-4 rounded-2xl shadow bg-white">
-          <div className="flex gap-2 items-end mb-4">
-            <div className="flex-1">
-              <label className="block text-sm mb-1">Agent Identity</label>
-              <input value={identity} onChange={e => setIdentity(e.target.value)} className="w-full border rounded-lg p-2" />
-            </div>
-            <div>
-              <label className="block text-sm mb-1">Company</label>
-              <select value={company} onChange={e => setCompany(e.target.value as any)} className="border rounded-lg p-2">
-                <option value="A">Company A</option>
-                <option value="B">Company B</option>
-              </select>
-            </div>
+        {/* Controls */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md space-y-4">
+          <input
+            value={identity}
+            onChange={e => setIdentity(e.target.value)}
+            placeholder="Agent Identity"
+            className="w-full px-3 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-700"
+          />
+
+          <select
+            value={company}
+            onChange={e => setCompany(e.target.value as 'A' | 'B')}
+            className="w-full px-3 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-700"
+          >
+            <option value="A">Company A</option>
+            <option value="B">Company B</option>
+          </select>
+
+          <input
+            value={target}
+            onChange={e => setTarget(e.target.value)}
+            placeholder="Dial Number e.g. +18562307373"
+            className="w-full px-3 py-2 rounded-md border dark:border-gray-700 bg-gray-50 dark:bg-gray-700"
+          />
+
+          <div className="flex gap-4">
+            <button
+              onClick={handleCall}
+              disabled={!isReady}
+              className="flex-1 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              Call
+            </button>
+            <button
+              onClick={hangup}
+              className="flex-1 py-2 rounded-md bg-red-600 text-white hover:bg-red-700"
+            >
+              Hang Up
+            </button>
           </div>
 
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <label className="block text-sm mb-1">Dial Number</label>
-              <input placeholder="e.g. +18562307373" value={target} onChange={e => setTarget(e.target.value)} className="w-full border rounded-lg p-2" />
-            </div>
-            <button onClick={handleCall} disabled={!isReady && !isMock || !target} className="px-4 py-2 rounded-xl bg-zinc-900 text-white disabled:opacity-40">Call</button>
-            <button onClick={hangup} disabled={!conn && !isMock} className="px-4 py-2 rounded-xl bg-zinc-200">Hang up</button>
+          <div className="flex gap-4">
+            <button
+              onClick={loadLogs}
+              className="flex-1 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Refresh Call Logs
+            </button>
+            <button
+              onClick={() => loadRecordings()}
+              className="flex-1 py-2 rounded-md bg-purple-600 text-white hover:bg-purple-700"
+            >
+              Load Recordings
+            </button>
           </div>
-
-          <div className="mt-4 text-sm text-zinc-700">Status: {status}</div>
         </div>
 
-        <div className="p-4 rounded-2xl shadow bg-white">
-          <h3 className="font-semibold mb-2">Quick Actions</h3>
-          <button onClick={loadLogs} className="px-3 py-2 rounded-lg bg-zinc-100 w-full mb-2">Refresh Call Logs</button>
-          <button onClick={() => loadRecordings()} className="px-3 py-2 rounded-lg bg-zinc-100 w-full">Load Recordings</button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 mt-6">
-        <div className="p-4 rounded-2xl shadow bg-white">
-          <h3 className="font-semibold mb-2">Company A — Call History</h3>
-          {loadingLogs ? <div>Loading…</div> : (
-            <ul className="text-sm divide-y">
-              {logs.A?.map((c: any) => (
-                <li key={c.sid} className="py-2 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{c.toFormatted} <span className="text-xs text-zinc-500">({c.direction})</span></div>
-                    <div className="text-xs text-zinc-500">{c.startTime} • {c.duration}s • {c.status}</div>
-                  </div>
-                  <button onClick={() => loadRecordings(c.sid)} className="text-xs underline">Recordings</button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="p-4 rounded-2xl shadow bg-white">
-          <h3 className="font-semibold mb-2">Company B — Call History</h3>
-          {loadingLogs ? <div>Loading…</div> : (
-            <ul className="text-sm divide-y">
-              {logs.B?.map((c: any) => (
-                <li key={c.sid} className="py-2 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{c.toFormatted} <span className="text-xs text-zinc-500">({c.direction})</span></div>
-                    <div className="text-xs text-zinc-500">{c.startTime} • {c.duration}s • {c.status}</div>
-                  </div>
-                  <button onClick={() => loadRecordings(c.sid)} className="text-xs underline">Recordings</button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      <div className="p-4 rounded-2xl shadow bg-white mt-6">
-        <h3 className="font-semibold mb-2">Recordings</h3>
-        <ul className="text-sm divide-y">
-          {recordings.map((r: any) => (
-            <li key={r.sid} className="py-2 flex items-center justify-between">
-              <div>
-                <div className="font-medium">{r.callSid} • {r.duration}s</div>
-                <div className="text-xs text-zinc-500">Created: {r.dateCreated}</div>
-              </div>
-              <a className="text-xs underline" href={r.mediaUrl} target="_blank">Play</a>
-            </li>
+        {/* Call History */}
+        <div className="space-y-4">
+          {['A', 'B'].map(c => (
+            <div key={c} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
+              <h2 className="text-lg font-semibold mb-2">Company {c} — Call History</h2>
+              {logs[c].length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400">No calls yet</p>
+              ) : (
+                <ul className="space-y-2">
+                  {logs[c].map((log: any, i: number) => (
+                    <li key={i} className="border-b dark:border-gray-700 pb-2">
+                      <div className="flex justify-between">
+                        <span>{log.from} → {log.to}</span>
+                        <span className="text-sm text-gray-500">{log.duration}s</span>
+                      </div>
+                      <button
+                        onClick={() => loadRecordings(log.sid)}
+                        className="text-blue-500 hover:underline text-sm"
+                      >
+                        Recordings
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           ))}
-        </ul>
+        </div>
+
+        {/* Recordings */}
+        {recordings.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
+            <h2 className="text-lg font-semibold mb-2">Recordings</h2>
+            <ul className="space-y-2">
+              {recordings.map((rec, i) => (
+                <li key={i}>
+                  <audio controls src={rec.url} className="w-full" />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
       </div>
-    </main>
+    </div>
   )
 }
